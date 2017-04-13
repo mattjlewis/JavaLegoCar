@@ -16,7 +16,7 @@
 		<maven.compiler.target>${jdk.target.version}</maven.compiler.target>
 		
 		<maven-compiler-plugin.version>3.5.1</maven-compiler-plugin.version>
-		<tinylog.version>1.1</tinylog.version>
+		<tinylog.version>1.2</tinylog.version>
 		<diozero.version>0.10-SNAPSHOT</diozero.version>
 	</properties>
 	
