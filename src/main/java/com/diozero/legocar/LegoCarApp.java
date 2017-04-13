@@ -11,7 +11,7 @@ import com.diozero.sdl.joystick.JoystickEvent.ButtonEvent;
 import com.diozero.util.RangeUtil;
 import com.diozero.util.SleepUtil;
 
-public class LegoCarTest {
+public class LegoCarApp {
 	// Input mapping
 	private static final int JS_STEERING_AXIS = PS3DualshockController.LEFT_STICK_HORIZ_AXIS;
 	private static final int JS_ENGINE_AXIS = PS3DualshockController.RIGHT_STICK_VERT_AXIS;
