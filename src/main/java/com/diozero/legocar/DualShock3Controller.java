@@ -1,6 +1,6 @@
 package com.diozero.legocar;
 
-public interface PS3DualshockController {
+public interface DualShock3Controller {
 	// Button mapping
 	public static final int PS3_SELECT_BUTTON = 0;
 	public static final int PS3_LEFT_STICK_BUTTON = 1;

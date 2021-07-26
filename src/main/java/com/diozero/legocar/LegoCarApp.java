@@ -7,20 +7,21 @@ import com.diozero.sdl.joystick.Joystick;
 import com.diozero.sdl.joystick.JoystickEvent;
 import com.diozero.sdl.joystick.JoystickEvent.AxisMotionEvent;
 import com.diozero.sdl.joystick.JoystickEvent.ButtonEvent;
+import com.diozero.sdl.joystick.JoystickEventListener;
 import com.diozero.sdl.joystick.JoystickInfo;
 import com.diozero.sdl.joystick.JoystickNative;
 import com.diozero.util.Diozero;
 import com.diozero.util.RangeUtil;
 import com.diozero.util.SleepUtil;
 
-public class LegoCarApp implements AutoCloseable {
+public class LegoCarApp implements AutoCloseable, JoystickEventListener {
 	// Input mapping
-	private static final int JS_STEERING_AXIS = PS3DualshockController.LEFT_STICK_HORIZ_AXIS;
-	private static final int JS_ENGINE_AXIS = PS3DualshockController.RIGHT_STICK_VERT_AXIS;
-	private static final int JS_EXIT_BUTTON = PS3DualshockController.PS3_START_BUTTON;
-	private static final int JS_LIGHT1_BUTTON = PS3DualshockController.PS3_SQUARE_BUTTON;
-	private static final int JS_LIGHT2_BUTTON = PS3DualshockController.PS3_X_BUTTON;
-	private static final int JS_SHUTDOWN_BUTTON = PS3DualshockController.PS3_O_BUTTON;
+	private static final int JS_STEERING_AXIS = DualShock3Controller.LEFT_STICK_HORIZ_AXIS;
+	private static final int JS_ENGINE_AXIS = DualShock3Controller.RIGHT_STICK_VERT_AXIS;
+	private static final int JS_EXIT_BUTTON = DualShock3Controller.PS3_START_BUTTON;
+	private static final int JS_LIGHT1_BUTTON = DualShock3Controller.PS3_SQUARE_BUTTON;
+	private static final int JS_LIGHT2_BUTTON = DualShock3Controller.PS3_X_BUTTON;
+	private static final int JS_SHUTDOWN_BUTTON = DualShock3Controller.PS3_O_BUTTON;
 
 	// Picon Zero connections
 	private static final int MOTOR = 1;
@@ -40,11 +41,12 @@ public class LegoCarApp implements AutoCloseable {
 			if (TEST_SERVO_ON_START) {
 				app.testServo();
 			}
+
 			if (TEST_LEDS_ON_START) {
 				app.testLEDs();
 			}
-	
-			app.run();
+
+			JoystickNative.processEvents();
 		} finally {
 			Diozero.shutdown();
 		}
@@ -66,7 +68,9 @@ public class LegoCarApp implements AutoCloseable {
 			Logger.error("No joysticks");
 			System.exit(1);
 		}
-		joystick = JoystickNative.getJoystick(0);
+
+		joystick = JoystickNative.getJoystickOrGameController(0);
+		joystick.setListener(this);
 
 		pz = new PiconZero();
 		// Configure the outputs
@@ -75,67 +79,65 @@ public class LegoCarApp implements AutoCloseable {
 		pz.setOutputConfig(LIGHT2_CHANNEL, PiconZero.OutputConfig.DIGITAL);
 	}
 
-	private void run() {
+	@Override
+	public void accept(JoystickEvent event) {
+		Logger.debug("Joystick event: {}", event);
 		Long sd_button_down_time = null;
-		boolean running = true;
-		while (running) {
-			JoystickEvent event = JoystickNative.waitForEvent();
-			if (event.getJoystickId() == joystick.getId()) {
-				switch (event.getType()) {
-				case BUTTON_PRESS:
-					ButtonEvent b_event = (ButtonEvent) event;
-					switch (b_event.getButton()) {
-					case JS_EXIT_BUTTON:
-						running = false;
-						break;
-					case JS_LIGHT1_BUTTON:
-						pz.setValue(LIGHT1_CHANNEL, b_event.isPressed());
-						break;
-					case JS_LIGHT2_BUTTON:
-						pz.setValue(LIGHT2_CHANNEL, b_event.isPressed());
-						break;
-					case JS_SHUTDOWN_BUTTON:
-						if (b_event.isPressed()) {
-							sd_button_down_time = Long.valueOf(System.currentTimeMillis());
+		if (event.getJoystickId() == joystick.getId()) {
+			switch (event.getType()) {
+			case BUTTON_PRESS:
+				ButtonEvent b_event = (ButtonEvent) event;
+				switch (b_event.getButton()) {
+				case JS_EXIT_BUTTON:
+					JoystickNative.stopEventLoop();
+					break;
+				case JS_LIGHT1_BUTTON:
+					pz.setOutputValue(LIGHT1_CHANNEL, b_event.isPressed());
+					break;
+				case JS_LIGHT2_BUTTON:
+					pz.setOutputValue(LIGHT2_CHANNEL, b_event.isPressed());
+					break;
+				case JS_SHUTDOWN_BUTTON:
+					if (b_event.isPressed()) {
+						sd_button_down_time = Long.valueOf(System.currentTimeMillis());
+					} else {
+						if (sd_button_down_time != null && (System.currentTimeMillis()
+								- sd_button_down_time.longValue()) > SHUTDOWN_BUTTON_PRESS_TIME) {
+							JoystickNative.stopEventLoop();
 						} else {
-							if (sd_button_down_time != null && (System.currentTimeMillis()
-									- sd_button_down_time.longValue()) > SHUTDOWN_BUTTON_PRESS_TIME) {
-								running = false;
-							} else {
-								sd_button_down_time = null;
-							}
+							sd_button_down_time = null;
 						}
-						break;
-					default:
-						Logger.info("Unhandled button event {}", b_event);
 					}
-					break;
-				case AXIS_MOTION:
-					AxisMotionEvent a_event = (AxisMotionEvent) event;
-					switch (a_event.getAxis()) {
-					case JS_STEERING_AXIS:
-						setSteering(a_event.getValue());
-						break;
-					case JS_ENGINE_AXIS:
-						// Invert the axis value
-						setEngineSpeed(-a_event.getValue());
-						break;
-					default:
-						Logger.info("Unhandled axis motion event: {}", a_event);
-					}
-					break;
-				case DEVICE:
-					Logger.info("Unhandled device event: {}", event);
-					break;
-				case BALL_MOTION:
-					Logger.info("Unhandled ball motion event: {}", event);
-					break;
-				case HAT_MOTION:
-					Logger.info("Unhandled hat motion event: {}", event);
 					break;
 				default:
-					// Ignore
+					Logger.info("Unhandled button event {}", b_event);
 				}
+				break;
+			case AXIS_MOTION:
+				AxisMotionEvent a_event = (AxisMotionEvent) event;
+				switch (a_event.getAxis()) {
+				case JS_STEERING_AXIS:
+					setSteering(a_event.getValue());
+					break;
+				case JS_ENGINE_AXIS:
+					// Invert the axis value
+					setEngineSpeed(-a_event.getValue());
+					break;
+				default:
+					Logger.info("Unhandled axis motion event: {}", a_event);
+				}
+				break;
+			case DEVICE:
+				Logger.info("Unhandled device event: {}", event);
+				break;
+			case BALL_MOTION:
+				Logger.info("Unhandled ball motion event: {}", event);
+				break;
+			case HAT_MOTION:
+				Logger.info("Unhandled hat motion event: {}", event);
+				break;
+			default:
+				// Ignore
 			}
 		}
 	}
@@ -167,19 +169,19 @@ public class LegoCarApp implements AutoCloseable {
 		int channel = LIGHT1_CHANNEL;
 		Logger.info("Testing channel {}", Integer.valueOf(channel));
 		Logger.info("LED on for channel {}", Integer.valueOf(channel));
-		pz.setValue(channel, true);
+		pz.setOutputValue(channel, true);
 		SleepUtil.sleepSeconds(1);
 		Logger.info("LED off for channel {}", Integer.valueOf(channel));
-		pz.setValue(channel, false);
+		pz.setOutputValue(channel, false);
 		SleepUtil.sleepSeconds(1);
 
 		channel = LIGHT2_CHANNEL;
 		Logger.info("Testing channel {}", Integer.valueOf(channel));
 		Logger.info("LED on for channel {}", Integer.valueOf(channel));
-		pz.setValue(channel, true);
+		pz.setOutputValue(channel, true);
 		SleepUtil.sleepSeconds(1);
 		Logger.info("LED off for channel {}", Integer.valueOf(channel));
-		pz.setValue(channel, false);
+		pz.setOutputValue(channel, false);
 		SleepUtil.sleepSeconds(1);
 	}
 
